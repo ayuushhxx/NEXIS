@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ShieldCheck, ShieldAlert, Loader2, ArrowRight, CheckCircle2, Lock } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Loader2, ArrowRight, CheckCircle2, Lock, X } from 'lucide-react';
 import { ConsentScope } from '../../types';
 import { USER_COLOR, USER_COLOR_LIGHT } from '../../theme/brand';
 
 interface ConsentScreenProps {
   onConsentsSaved: (scopes: Record<ConsentScope, boolean>) => Promise<boolean>;
+  onDismiss?: () => void;
 }
 
 interface ScopeDefinition {
@@ -46,7 +47,8 @@ const SCOPES_CONFIG: ScopeDefinition[] = [
   },
 ];
 
-export const ConsentScreen: React.FC<ConsentScreenProps> = ({ onConsentsSaved }) => {
+export const ConsentScreen: React.FC<ConsentScreenProps> = ({ onConsentsSaved, onDismiss }) => {
+  const [isDismissed, setIsDismissed] = useState(false);
   const [consents, setConsents] = useState<Record<ConsentScope, boolean>>(() => {
     const initial: Record<ConsentScope, boolean> = {
       JOB_SEARCH_DATA: true,
@@ -59,6 +61,11 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({ onConsentsSaved })
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleDismiss = () => {
+    setIsDismissed(true);
+    onDismiss?.();
+  };
 
   const handleToggle = (scope: ConsentScope) => {
     setConsents((prev) => ({
@@ -92,10 +99,17 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({ onConsentsSaved })
 
   const grantedCount = Object.values(consents).filter(Boolean).length;
 
+  if (isDismissed) {
+    return null;
+  }
+
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-6 pointer-events-auto overflow-hidden">
       {/* Frosted Glass Backdrop */}
-      <div className="absolute inset-0 bg-white/60 backdrop-blur-xl animate-in fade-in duration-500" />
+      <div 
+        onClick={handleDismiss}
+        className="absolute inset-0 bg-white/60 backdrop-blur-xl animate-in fade-in duration-500 cursor-pointer" 
+      />
 
       {/* Modal Card */}
       <div className="relative w-full max-w-2xl bg-white rounded-[32px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.12)] p-6 md:p-8 border border-zinc-100 animate-in fade-in slide-in-from-bottom-4 duration-500 max-h-[90vh] overflow-hidden flex flex-col">
@@ -117,19 +131,40 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({ onConsentsSaved })
             </p>
           </div>
 
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 hidden sm:flex"
-            style={{ backgroundColor: USER_COLOR_LIGHT }}
-          >
-            <Lock size={22} style={{ color: USER_COLOR }} />
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center hidden sm:flex"
+              style={{ backgroundColor: USER_COLOR_LIGHT }}
+            >
+              <Lock size={22} style={{ color: USER_COLOR }} />
+            </div>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
+              title="Dismiss modal and explore dashboard"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
           </div>
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3.5 bg-red-50 text-red-700 text-xs rounded-xl border border-red-100 font-medium flex items-center gap-2 shrink-0">
-            <ShieldAlert size={16} className="shrink-0 text-red-500" />
-            <span>{error}</span>
+          <div className="mb-4 p-3.5 bg-red-50 text-red-700 text-xs rounded-xl border border-red-100 font-medium flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <ShieldAlert size={16} className="shrink-0 text-red-500" />
+              <span>{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="text-[11px] font-bold underline text-red-700 hover:text-red-900 cursor-pointer shrink-0"
+              title="Proceed to application"
+            >
+              Continue Anyway
+            </button>
           </div>
         )}
 
@@ -196,23 +231,32 @@ export const ConsentScreen: React.FC<ConsentScreenProps> = ({ onConsentsSaved })
               </span>
             </div>
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-darkDelegation text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black transition-all active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Recording Consent...
-                </>
-              ) : (
-                <>
-                  Confirm & Continue
-                  <ArrowRight size={14} />
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 transition-all cursor-pointer"
+              >
+                Skip for now
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-darkDelegation text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black transition-all active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Recording Consent...
+                  </>
+                ) : (
+                  <>
+                    Confirm & Continue
+                    <ArrowRight size={14} />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>
