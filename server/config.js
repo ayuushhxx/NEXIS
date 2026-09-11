@@ -18,6 +18,7 @@ export const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || ''
 // ── LinkedIn OAuth ────────────────────────────────────────────────────────────
 export const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID || ''
 export const LINKEDIN_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || ''
+export const LINKEDIN_REDIRECT_URI = process.env.LINKEDIN_REDIRECT_URI || ''
 
 // ── AI Service Keys ───────────────────────────────────────────────────────────
 export const DEFAULT_GEMINI_KEY = process.env.GEMINI_API_KEY || ''
