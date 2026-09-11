@@ -4,17 +4,42 @@ Comprehensive chronological record of updates, features, architecture decisions,
 
 ---
 
-## Current Version: v0.3.8
+## Current Version: v0.3.9
 
 ### Status Summary
-- **Frontend**: Live on React 19 + TypeScript + Vite (`http://localhost:3000`), featuring Three.js WebGL 3D agent simulation, React Flow visual team configurator, Recharts analytics dashboard, and standalone portals for employers (`/verify/:token`) and training providers (`/provider/:token`).
-- **Backend API**: Express.js 5.x on port `8787` (`http://localhost:8787`) with 15 specialized route modules, 12 core services, Prisma ORM v5 with PostgreSQL datasource, Google Gemini API, Sarvam AI, Serper.dev, and PDFKit document compilation.
-- **Data & Auth Layer**: Prisma ORM v5 + PostgreSQL schema supporting Trainees, Enrolments, multi-scope DPDP Consent records, Outcome Check-ins, Employer Verifications, Admin RBAC & Audit Trails, Deduplication review, e-Shram/UDYAM Cross-Checks, Course Relevance Scorecards, Provider Access Tokens, and Synthetic Control Group records.
+- **Frontend**: Live on React 19 + TypeScript + Vite (`http://localhost:3000`), featuring Three.js WebGL 3D agent simulation, React Flow visual team configurator, Recharts analytics dashboard, non-blocking DPDP consent workflows, and standalone portals for employers (`/verify/:token`) and training providers (`/provider/:token`).
+- **Backend API**: Express.js 5.x on port `8787` (`http://localhost:8787`) with 16 specialized route modules, 12 core services, Prisma ORM v5, autonomous role-adaptive job discovery, Google Gemini API, Sarvam AI, Serper.dev, and PDFKit document compilation.
+- **Data & Auth Layer**: Prisma ORM v5 supporting SQLite (dev default) & PostgreSQL (prod) schemas for Trainees, Enrolments, multi-scope DPDP Consent records, Outcome Check-ins, Employer Verifications, Admin RBAC & Audit Trails, Deduplication review, e-Shram/UDYAM Cross-Checks, Course Relevance Scorecards, Provider Access Tokens, and Synthetic Control Group records.
 - **Analytics & Impact Engine**: 3-Signal Course Relevance Scoring, Government Analytics Dashboard with paired placement/response rates and labor migration tracking, and Stratified Propensity Matching engine for impact uplift estimation.
 
 ---
 
 ## Version History & Milestones
+
+### [v0.3.9] - 2026-09-12 — Platform Resiliency, Autonomous Job Engine & Onboarding Hardening
+
+#### 1. Backend Server Startup & Config Stability
+- **LinkedIn OAuth Configuration**: Exported `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, and `LINKEDIN_REDIRECT_URI` in [`server/config.js`](file:///c:/HACKATHON/SIH/FORG/server/config.js), resolving the fatal startup `SyntaxError` that was crashing port 8787 on startup.
+- **Proxy Reliability**: Ensured Express API boots cleanly and listens on port 8787, guaranteeing Vite proxy forward (`http://localhost:3000/api/*`) functions without 500/504 gateway failures.
+
+#### 2. DPDP Onboarding & Modal De-Escalation
+- **Non-Blocking Dismissal Controls**: Enhanced [`src/interface/onboarding/ConsentScreen.tsx`](file:///c:/HACKATHON/SIH/FORG/src/interface/onboarding/ConsentScreen.tsx) with a top-right close button (`X`), backdrop click dismissal, and self-managing `isDismissed` state.
+- **Guest / Demo Mode Exploration**: Added a "Skip for now" button allowing reviewers and demo visitors to explore the 3D simulation and dashboard without committing consent scopes immediately.
+- **Error Recovery Bypass**: Added an inline "Continue Anyway" action inside the error alert banner so trainees are never permanently locked behind frosted-glass modals if network or backend latency occurs.
+
+#### 3. Autonomous Role-Adaptive Job Discovery (`Nexus-Hunter`)
+- **Autonomous LLM Synthesis (`mode: "gemini-autonomous"`)**: Upgraded [`server/routes/jobs.js`](file:///c:/HACKATHON/SIH/FORG/server/routes/jobs.js) (`POST /api/jobs/discover`). When external search API keys (`SERPER_API_KEY`) are omitted or return empty results, Gemini autonomously synthesizes 3 realistic, high-fit job opportunities tailored directly to the candidate's actual `targetRole` and `resume`.
+- **Dynamic Role-Based Fallbacks (`mode: "adaptive-fallback"`)**: Replaced static hardcoded "Founding AI Engineer" boilerplate with dynamic, trade-aligned search queries matching the candidate's specific vocational domain.
+
+#### 4. Admin RBAC Bootstrap & Zero-Latency Experience
+- **Auto-Seeding Dev Super-Admin**: Updated [`server/lib/seedAdminUser.js`](file:///c:/HACKATHON/SIH/FORG/server/lib/seedAdminUser.js) to auto-seed `dev_trainee` as `SUPER_ADMIN` in the database on boot, preventing local developers from being locked out of administrative surfaces.
+- **Eager Evaluation in `useIsAdmin`**: Updated [`src/interface/admin/useIsAdmin.ts`](file:///c:/HACKATHON/SIH/FORG/src/interface/admin/useIsAdmin.ts) to eagerly initialize `isAdmin: true` for development tokens (`dev_trainee`, `mock_*`, `dev_*`), eliminating the initial-render network lag and preventing the *"Administrative Access Restricted"* alert flash.
+
+#### 5. Codebase Cleanup & Configuration Alignment
+- **Pruned Dead Code**: Safely removed orphaned and unmounted [`src/interface/Header.tsx`](file:///c:/HACKATHON/SIH/FORG/src/interface/Header.tsx) after all controls were consolidated into the full-height permanent left [`Sidebar.tsx`](file:///c:/HACKATHON/SIH/FORG/src/interface/Sidebar.tsx).
+- **Environment Alignment**: Updated [`.env.example`](file:///c:/HACKATHON/SIH/FORG/.env.example) to default to SQLite `DATABASE_URL="file:./dev.db"` (matching `prisma/schema.prisma`), with explicit instructions for PostgreSQL deployment.
+- **OTP Workflow Architecture**: Documented dual-mode SMS OTP verification: terminal console logging in dev mode vs live SMS via MSG91 in production.
+- **Remote Repository**: Set active remote tracking `origin` to `https://github.com/ayuushhxx/NEXIS.git`.
 
 ### [v0.3.8] - 2026-09-11
 ### Added

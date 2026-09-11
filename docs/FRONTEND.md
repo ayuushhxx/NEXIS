@@ -2,143 +2,92 @@
 
 ## Overview
 
-The frontend is a React 19 + TypeScript application built with Vite, featuring a 3D simulation workspace rendered with Three.js and a suite of career-oriented UI panels.
+The Forge v3 frontend is a React 19 + TypeScript application built with Vite and TailwindCSS v4. It delivers a 3D agent simulation workspace rendered with Three.js alongside a suite of career orchestration and vocational tracking views.
 
-## Entry Points
+---
 
-| File | Purpose |
-|------|---------|
-| `index.html` | HTML shell with meta tags and root div |
-| `src/main.tsx` | React DOM bootstrap |
-| `src/App.tsx` | Root component — layout, routing, modal orchestration |
-| `src/index.css` | Global styles, Tailwind import, custom theme |
+## Layout Architecture
 
-## Component Architecture
-
-### Layout Structure
-
-The app uses a **fixed viewport layout** with three regions:
+The application uses a full-height fixed viewport layout anchored by a permanent left `Sidebar.tsx`:
 
 ```
-┌──────────────────────────────────────────────────┐
-│  Header (mode switcher, controls, branding)       │
-├──────────────────────────────────────────────────┤
-│  PhaseOneControlPanel (brief input bar)           │
-├────────┬─────────────────────────────┬───────────┤
-│        │                             │           │
-│ Action │    SimulationView           │ Inspector │
-│  Log   │    (3D Canvas)              │   Panel   │
-│ Panel  │                             │           │
-│        │                             │           │
-│        ├─────────────────────────────┤           │
-│        │  KanbanPanel (task board)   │           │
-├────────┴─────────────────────────────┴───────────┤
-│  [Modals: ResumeForge, NexusHunter, NexusMirror] │
-└──────────────────────────────────────────────────┘
+┌──────┬────────────────────────────────────────────────────────┐
+│      │ PhaseOneControlPanel (Resume upload & target JD input) │
+│      ├────────────────────────────────────────────────────────┤
+│      │                                                        │
+│ Side │ SimulationView (3D Three.js WebGL Canvas)              │
+│ bar  │                                                        │
+│      │ Active View Overlay (Skill Gaps, Jobs, Outcome, etc.)  │
+│ (8   │                                                        │
+│ Views│                                                        │
+│ +    ├────────────────────────────────────────────────────────┤
+│ Admin│ KanbanPanel (Resizable bottom application pipeline)    │
+│ +    │                                                        │
+│ Tools│                                                        │
+└──────┴────────────────────────────────────────────────────────┘
 ```
 
-### Key Components
+---
 
-#### Panels (Always Visible)
+## Navigation & Views (`src/interface/`)
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `Header` | `interface/Header.tsx` | Top bar with mode switcher, BYOK, pricing, info |
-| `PhaseOneControlPanel` | `interface/PhaseOneControlPanel.tsx` | Brief input, reference images, project launch |
-| `ActionLogPanel` | `interface/ActionLogPanel.tsx` | Left sidebar — real-time agent activity feed |
-| `InspectorPanel` | `interface/InspectorPanel.tsx` | Right sidebar — selected agent info, debug logs |
-| `KanbanPanel` | `interface/KanbanPanel.tsx` | Bottom drawer — task pipeline board |
-| `SimulationView` | `interface/SimulationView.tsx` | 3D canvas container with fullscreen toggle |
+### 1. Permanent Left Navigation (`Sidebar.tsx`)
+Hosts all primary navigation, active state badges, administrative console triggers, and bottom utility toolbar:
+- **Dashboard**: Default 3D simulation canvas with active agent avatars.
+- **Skill Gaps Matrix** (`SkillGapsView.tsx`): ATS match score breakdown and missing keyword analysis.
+- **Job Matches** (`JobMatchesView.tsx`): Blue ocean opportunities with match rationale and direct application links.
+- **Recommended Programs** (`RecommendedProgramsView.tsx`): Context-aware upskilling roadmaps.
+- **Interview Prep** (`InterviewPrepView.tsx`): Mock technical/behavioral simulator with real-time pressure scoring.
+- **New CV** (`NewCVView.tsx`): Tailored resume preview with client-side & server-side PDF export.
+- **My Outcome** (`OutcomeStatusView.tsx`): Post-certification longitudinal employment tracking, employer verification status, and registry corroboration signals.
+- **LinkedIn Integration** (`LinkedInIntegrationView.tsx`): LinkedIn OIDC candidate verification and inline PDF profile parsing.
 
-#### Modals (On-Demand)
+### 2. Admin Surfaces (RBAC-Gated)
+- **Government Analytics Dashboard** (`interface/admin/AnalyticsDashboard.tsx`):
+  - Recharts visualizations for paired placement and response rates.
+  - Labor migration attribution (Home District vs. Placement District).
+  - Sortable course relevance scorecards with top missing skills chips.
+  - Longitudinal wage band progression tracking.
+  - Shareable token generator (`POST /api/admin/generate-provider-token`).
+  - Illustrative impact uplift estimation against synthetic control groups.
+- **Deduplication Review Panel** (`interface/admin/DedupReviewPanel.tsx`):
+  - Side-by-side comparison of duplicate candidate profiles.
+  - Jaro-Winkler match score and signal breakdown.
+  - OTP-gated atomic merge execution.
 
-| Component | File | Trigger |
-|-----------|------|---------|
-| `ResumeForgeModal` | `interface/ResumeForgeModal.tsx` | Header "Resume Forge" button |
-| `NexusHunterModal` | `interface/NexusHunterModal.tsx` | Header "Job Hunter" button |
-| `NexusMirrorModal` | `interface/NexusMirrorModal.tsx` | Header "Nexus-Mirror" button |
-| `FinalOutputModal` | `interface/FinalOutputModal.tsx` | Auto-opens on project completion |
-| `OutputReviewModal` | `interface/OutputReviewModal.tsx` | HITL review checkpoint |
-| `AuditModal` | `interface/AuditModal.tsx` | Task audit/detail view |
-| `BYOKModal` | `interface/BYOKModal.tsx` | Bring Your Own Key API config |
-| `PricingModal` | `interface/PricingModal.tsx` | Token usage & cost estimation |
-| `InfoModal` | `interface/InfoModal.tsx` | About/help dialog |
-| `DeleteTaskModal` | `interface/DeleteTaskModal.tsx` | Task deletion confirmation |
-| `ResetModal` | `interface/ResetModal.tsx` | Project reset confirmation |
-| `TeamFlowModal` | `interface/TeamFlowModal.tsx` | Team configuration details |
+### 3. Standalone Public Portals (Prefix-Based Routing in `src/App.tsx`)
+- **Employer Verification Portal** (`/verify/:token` → `EmployerVerificationPage.tsx`):
+  - Lightweight public page for corporate HR to confirm or deny placement claims.
+  - Bypasses 3D scene, sidebar, and platform login.
+- **Provider Analytics Portal** (`/provider/:token` → `ProviderViewPage.tsx`):
+  - Isolated read-only metrics and course scorecards for training partners.
+  - Strict candidate PII redaction.
 
-#### Visual Configurator (React Flow)
+### 4. DPDP Onboarding Overlay (`src/interface/onboarding/`)
+- **`ConsentScreen.tsx`**:
+  - Non-blocking multi-scope consent dialog (`JOB_SEARCH_DATA`, `EMPLOYER_SHARING`, `ANALYTICS`, `GOVT_CROSS_CHECK`).
+  - Top-right close button (`X`), backdrop dismissal, and "Skip for now" demo mode.
+  - Inline "Continue Anyway" recovery action in error state.
+- **`TraineeProfileSetup.tsx`**:
+  - OTP-gated vocational profile builder capturing trade scheme and prior qualification.
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `VisualConfigurator` | `VisualConfigurator/VisualConfigurator.tsx` | Main flow editor |
-| `AgentConfigPanel` | `VisualConfigurator/AgentConfigPanel.tsx` | Agent settings sidebar |
-| `TeamCard` | `VisualConfigurator/TeamCard.tsx` | Team preset selection |
-| `TeamsPanel` | `VisualConfigurator/TeamsPanel.tsx` | Team list panel |
-| `VisualFlowNode` | `VisualConfigurator/nodes/VisualFlowNode.tsx` | Custom flow node |
-| `DirectionalEdge` | `VisualConfigurator/edges/DirectionalEdge.tsx` | Custom flow edge |
-| `ColorPicker` | `VisualConfigurator/ColorPicker.tsx` | Agent color selector |
+---
 
-#### Shared Components
+## State Management Architecture
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `Avatar` | `components/Avatar.tsx` | Agent avatar with expression system |
-| `InfoBubble` | `components/InfoBubble.tsx` | Floating info tooltip |
-| `InfoTooltip` | `components/InfoTooltip.tsx` | Hover tooltip |
-| `ReferenceImages` | `components/ReferenceImages.tsx` | Reference image carousel |
-| `TeamBadge` | `components/TeamBadge.tsx` | Team identifier badge |
-| `TeamOutputBadge` | `components/TeamOutputBadge.tsx` | Output type indicator |
+State is managed via three specialized Zustand stores (`src/integration/store/`):
 
-## State Management
+| Store | Purpose |
+|---|---|
+| **`coreStore.ts`** | Resume text, parsed analysis, ATS score, job discovery results, interview sessions, active trainee profile, and check-in history. |
+| **`teamStore.ts`** | Multi-agent network topologies, node connections, custom team architectures, and execution mode (Autonomous vs. HITL). |
+| **`uiStore.ts`** | Active sidebar navigation tab (`activeSidebarTab`), selected agent inspector state, modal open/close flags, and BYOK API keys. |
 
-Three Zustand stores manage all application state:
+---
 
-### `coreStore` (775 lines)
-The main store—handles project lifecycle, tasks, action/debug logs, career data, resume analysis, job discovery results, and interview sessions.
+## 3D Simulation Engine (`src/simulation/`)
 
-### `teamStore`
-Manages agent team configurations, custom agentic systems, and the active team selection.
-
-### `uiStore`
-Character-level UI state: selected/hovered NPCs, chat state, BYOK config, screen positions.
-
-## 3D Simulation Engine
-
-Located in `src/simulation/`:
-
-| Module | Purpose |
-|--------|---------|
-| `SceneManager` | Three.js scene lifecycle, camera, lights, renderer |
-| `CharacterController` | High-level character management |
-| `CharacterManager` | GPU-instanced mesh, animations, expressions |
-| `CharacterStateMachine` | State → animation declarative mapping |
-| `AgentStateBuffer` | Float32Array agent state synchronization |
-| `ExpressionBuffer` | Facial expression atlas management |
-| `DriverManager` | Registers per-agent behavior drivers |
-| `NpcAgentDriver` | AI-controlled NPC behavior (goal-seeking) |
-| `PlayerInputDriver` | User-controlled character input |
-| `NavMeshManager` | Three-pathfinding navmesh loading |
-| `PathAgent` | Individual pathfinding agent |
-| `InputManager` | Mouse/keyboard input handling |
-| `PoiManager` | Points-of-interest management |
-| `WorldManager` | World geometry and environment |
-
-## Styling
-
-- **TailwindCSS v4** via `@tailwindcss/vite` plugin
-- **Inter** font from Google Fonts
-- Custom theme token: `--color-darkDelegation: #313437`
-- Markdown content styles defined in `index.css`
-
-## Type System
-
-Core types are defined in `src/types.ts`:
-- `CharacterState`, `AgentState` — 3D character state
-- `AnimationName`, `CharacterStateKey` — animation system
-- `PoiDef` — points of interest
-- `ICharacterDriver`, `IAgentDriver` — driver interfaces
-- `ExpressionKey`, `ExpressionConfig` — facial expressions
-
-Agent-specific types are in `src/data/agents.ts`:
-- `AgentNode`, `AgenticSystem`, `OutputType`
+- **`SceneManager.ts`**: Three.js scene lifecycle, perspective camera, ambient/directional lights, and render loop.
+- **`CharacterManager.ts`**: 3D agent avatars with skeletal animation state machines (idle, walking, typing).
+- **`NavMeshManager.ts`**: Navigation grid using `three-pathfinding` for collision-free agent locomotion.
+- **`DriverManager.ts`**: Agent behavior drivers routing specialists between workstations based on pipeline stage.

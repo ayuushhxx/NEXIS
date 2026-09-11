@@ -23,12 +23,14 @@
 - 🎮 **3D Agent Simulation Workspace**: Real-time WebGL office simulation powered by Three.js with NavMesh pathfinding and character state machines.
 - 📄 **Resume Forge**: Ingest candidate PDF resumes, extract structured text, and run single-pass AI tailoring against target Job Descriptions with printable A4 PDF export.
 - 🎯 **Skill Gap Matrix**: In-depth ATS compatibility analysis, missing technical/soft skills identification, and keyword matching.
-- 🧭 **Nexus-Hunter (Blue Ocean Discovery)**: Targeted job search via Serper API + Gemini scoring that prioritizes direct career pages over saturated aggregators.
+- 🧭 **Nexus-Hunter (Autonomous Job Discovery)**: Multi-mode job discovery supporting live Google searches via Serper, autonomous role-tailored opportunity synthesis via Google Gemini (`mode: "gemini-autonomous"`), and dynamic vocational fallbacks.
 - 🪞 **Nexus-Mirror (Interview Simulator)**: Adaptive technical and behavioral interview practice with real-time pressure scoring and recursive cross-questioning.
 - 📚 **Recommended Programs**: Context-aware upskilling growth tracks tailored to detected skill gaps.
 - 🌐 **Visual Team Configurator**: Interactive React Flow node canvas to inspect, modify, and build custom multi-agent collaboration topologies.
 - 📊 **Application Pipeline**: Resizable Kanban board tracking jobs across stages from discovery to submission.
-- 🔐 **DPDP Consent & Trainee Profiles**: Multi-scope consent modal (`JOB_SEARCH_DATA`, `EMPLOYER_SHARING`, `ANALYTICS`, `GOVT_CROSS_CHECK`), OTP-gated mobile authentication, and comprehensive vocational trainee profile setup.
+- 🔐 **DPDP Consent & Trainee Profiles**: Multi-scope consent modal (`JOB_SEARCH_DATA`, `EMPLOYER_SHARING`, `ANALYTICS`, `GOVT_CROSS_CHECK`) with non-blocking dismissal controls, "Skip for now" demo mode, and inline recovery bypass.
+- 📱 **Dual-Mode OTP Verification**: Instant developer console OTP logging for zero-friction local testing, with production dispatch via MSG91 SMS gateway.
+- 💼 **LinkedIn Integration**: Verified candidate profile ingestion via LinkedIn OIDC and inline PDF resume parsing with automated STAR-method bullet generation.
 - 🏛️ **Government Registry Cross-Checks**: Swappable corroboration system cross-referencing candidates against simulated e-Shram & UDYAM registries with confidence scoring and audit logs.
 - 🏢 **Employer Verification Portal**: Tokenized direct employer verification (`/verify/:token`) allowing corporate HR to confirm or deny placement claims with structured denial reason codes.
 - 🔄 **Candidate Deduplication Engine**: Multi-signal similarity matching (Jaro-Winkler name, exact DOB, district, Aadhaar hash, phone) with administrative review panel and atomic Prisma transaction merge capability.
@@ -48,10 +50,10 @@
 | **UI & Visual Canvas** | Lucide React, React Flow (`@xyflow/react`), Recharts, React Markdown, remark-gfm |
 | **Backend API** | Express.js 5.x (Node.js) |
 | **AI Providers** | Google Gemini API (`@google/genai`), Sarvam AI API |
-| **Search Integration** | Serper.dev API |
+| **Search Integration** | Serper.dev API & Autonomous Gemini Synthesis |
 | **Document Processing** | PDFKit (Backend generation), jsPDF (Client export), `pdf-parse` (Extraction) |
-| **Auth & Deployment** | GitHub OAuth, GitHub Actions CI/CD |
-| **Data Persistence** | Prisma ORM v5 + PostgreSQL (active datasource — Neon / Supabase / self-hosted) |
+| **Auth & Deployment** | GitHub OAuth, LinkedIn OIDC, SMS OTP (MSG91 / Dev Console) |
+| **Data Persistence** | Prisma ORM v5 (SQLite `file:./dev.db` dev default, PostgreSQL for prod) |
 
 ---
 
@@ -111,13 +113,14 @@ FORG/
 │   │   ├── github.js                # GET  /api/github/auth, user, repos
 │   │   ├── chat.js                  # POST /api/chat/director
 │   │   ├── interview.js             # POST /api/interview/generate, cross-question
-│   │   ├── jobs.js                  # POST /api/jobs/discover
+│   │   ├── jobs.js                  # POST /api/jobs/discover (Autonomous Gemini / Serper / Fallback)
+│   │   ├── linkedinAuth.js          # GET /api/linkedin/auth, callback; POST /api/linkedin/extract-pdf
 │   │   ├── programs.js              # POST /api/programs/recommend
 │   │   ├── trainee.js               # POST, GET /api/trainee/profile (OTP-gated)
 │   │   ├── consent.js               # POST, GET /api/consent, GET /api/consent/:traineeId
 │   │   ├── outcomes.js              # POST status-update, trigger-checkins, checkin-reply; GET status-history
 │   │   ├── admin.js                 # GET /api/admin/whoami, POST run-dedup-scan, GET/POST dedup-candidates
-│   │   ├── otpAuth.js               # POST /api/otp/send, POST /api/otp/verify
+│   │   ├── otpAuth.js               # POST /api/otp/send, POST /api/otp/verify (dual-mode: console/MSG91)
 │   │   ├── employer.js              # POST /api/trainee/request-employer-verification, GET/POST /api/verify/:token
 │   │   ├── govtCheck.js             # POST /api/admin/trigger-govt-crosscheck, GET /api/trainee/govt-crosscheck-history/:traineeId
 │   │   └── analytics.js             # POST /api/admin/compute-relevance-scores, GET /api/analytics/course-relevance
@@ -131,7 +134,7 @@ FORG/
 │   │   ├── interviewEngine.js       # Interview logic & pressure scoring
 │   │   ├── matchingService.js       # Trainee similarity scoring & DedupCandidate creation (findPotentialDuplicates)
 │   │   ├── mergeService.js          # Atomic Prisma transaction merge (mergeTrainees)
-│   │   ├── otpService.js            # OTP generation, hashing, MSG91 dispatch & verification
+│   │   ├── otpService.js            # Dual-mode OTP generation, hashing, console/MSG91 dispatch & verification
 │   │   ├── notificationService.js   # Provider-agnostic check-in messaging stub
 │   │   ├── govtVerificationService.js # Swappable e-Shram & UDYAM registry checks with deterministic phone hashing
 │   │   ├── relevanceScoringService.js # 3-signal course and provider relevance scoring engine (computeRelevanceScores)
@@ -151,8 +154,7 @@ FORG/
 │   │       ├── teamStore.ts         # Agent team definitions & graph nodes
 │   │       └── uiStore.ts           # Active sidebar navigation & modals
 │   ├── interface/                   # React views and interface components
-│   │   ├── Header.tsx               # Top navigation bar
-│   │   ├── Sidebar.tsx              # Permanent left navigation menu (8 views)
+│   │   ├── Sidebar.tsx              # Permanent left navigation menu (8 views + admin + utilities)
 │   │   ├── PhaseOneControlPanel.tsx # Resume upload & JD input controls
 │   │   ├── SimulationView.tsx       # 3D Three.js WebGL canvas wrapper
 │   │   ├── KanbanPanel.tsx          # Resizable application pipeline kanban
@@ -162,15 +164,15 @@ FORG/
 │   │   ├── InterviewPrepView.tsx    # Section: Mock Interview Simulator
 │   │   ├── NewCVView.tsx            # Section: Tailored Resume & PDF Export
 │   │   ├── OutcomeStatusView.tsx    # Section: Longitudinal Outcomes & Self-Report
-│   │   ├── LinkedInIntegrationView.tsx # Section: LinkedIn Integration
+│   │   ├── LinkedInIntegrationView.tsx # Section: LinkedIn Integration & Profile Ingestion
 │   │   ├── AgentDetailDrawer.tsx    # Agent detail inspector drawer
 │   │   ├── onboarding/              # 2-step DPDP onboarding overlay
-│   │   │   ├── ConsentScreen.tsx    # Step 1: DPDP multi-scope consent dialog
+│   │   │   ├── ConsentScreen.tsx    # Step 1: DPDP multi-scope consent dialog (non-blocking dismissal)
 │   │   │   └── TraineeProfileSetup.tsx # Step 2: OTP-gated vocational record setup modal
 │   │   ├── admin/                   # Admin-gated panel components
 │   │   │   ├── AnalyticsDashboard.tsx # Government & scheme analytics dashboard (Recharts, paired response rates, migration streams)
 │   │   │   ├── DedupReviewPanel.tsx # RBAC-gated dedup candidate review, scan trigger, OTP merge flow
-│   │   │   └── useIsAdmin.ts        # Reusable hook: calls GET /api/admin/whoami, returns { isAdmin, role, loading }
+│   │   │   └── useIsAdmin.ts        # Reusable hook: eager admin check + GET /api/admin/whoami
 │   │   ├── employer/                # Standalone public employer verification portal
 │   │   │   └── EmployerVerificationPage.tsx # Lightweight portal bypassing 3D scene/login
 │   │   ├── provider/                # Standalone public provider analytics portal
@@ -209,17 +211,23 @@ npm install
 cp .env.example .env
 ```
 1. Fill in your API keys in `.env` (at minimum `GEMINI_API_KEY` and `SARVAM_API_KEY`).
-2. Set a real PostgreSQL connection string for `DATABASE_URL` in `.env`. You can create a free PostgreSQL database in under 60 seconds on [Neon](https://neon.tech) or [Supabase](https://supabase.com).
-   Example format:
+2. **Zero-Config Database**: By default, `.env.example` configures SQLite (`DATABASE_URL="file:./dev.db"`), allowing Forge to run immediately out-of-the-box with zero external database provisioning.
+3. **Production PostgreSQL**: If deploying to staging or production, replace `DATABASE_URL` with your PostgreSQL connection string (Neon, Supabase, AWS RDS, etc.):
    ```env
    DATABASE_URL="postgresql://user:password@ep-sample-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
    ```
 
-### 3. Initialize PostgreSQL Database Schema
-Run the Prisma migration to create all tables fresh against your PostgreSQL instance:
+### 3. Initialize Database Schema
+Run the Prisma migration to create all tables fresh:
 ```powershell
 npm run db:migrate
 ```
+
+> [!TIP]
+> **Zero-Friction Local Testing**:
+> - **OTP Access**: In development mode, you do not need an SMS gateway or real phone. The 6-digit verification code is logged directly to the backend terminal console:
+>   `[OTP Service] Code for +919876543210: 481920 (dev mode - no SMS dispatched)`
+> - **Admin Access**: `dev_trainee` is automatically bootstrapped as a `SUPER_ADMIN` on startup, giving immediate access to the Government Analytics Dashboard and Deduplication review panel.
 
 ### 4. Run Development Servers
 ```powershell
@@ -243,15 +251,18 @@ npm run lint      # TypeScript validation
 
 | Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | **Yes** | PostgreSQL connection string (Neon, Supabase, or local: `postgresql://user:password@host:5432/dbname`) |
-| `GEMINI_API_KEY` | **Yes** | Google Gemini API Key for multi-agent reasoning |
+| `DATABASE_URL` | **Yes** | Database connection string (Default: `file:./dev.db` for local SQLite; PostgreSQL URL for production) |
+| `GEMINI_API_KEY` | **Yes** | Google Gemini API Key for multi-agent reasoning & autonomous job synthesis |
 | `SARVAM_API_KEY` | **Yes** | Sarvam AI API Key for fast text inference |
-| `SERPER_API_KEY` | Optional | Serper.dev API Key for live Google job searches |
+| `SERPER_API_KEY` | Optional | Serper.dev API Key for live Google job searches (autonomous Gemini fallback used if omitted) |
+| `LINKEDIN_CLIENT_ID` | Optional | LinkedIn OAuth Client ID |
+| `LINKEDIN_CLIENT_SECRET` | Optional | LinkedIn OAuth Client Secret |
+| `LINKEDIN_REDIRECT_URI` | Optional | LinkedIn OAuth Redirect URI (Default: `http://localhost:8787/api/linkedin/callback`) |
 | `GITHUB_CLIENT_ID` | Optional | GitHub OAuth Client ID |
 | `GITHUB_CLIENT_SECRET` | Optional | GitHub OAuth Client Secret |
-| `MSG91_AUTH_KEY` | Optional | MSG91 Auth Key for real SMS OTP sending |
+| `MSG91_AUTH_KEY` | Optional | MSG91 Auth Key for live SMS OTP dispatch (if omitted, OTPs log to terminal console) |
 | `MSG91_TEMPLATE_ID` | Optional | MSG91 approved DLT template ID for OTPs |
-| `ADMIN_GITHUB_USERNAME` | Optional | Bootstrap-only env var. Used once at server startup to seed the first `SUPER_ADMIN` into the DB. Ignored thereafter. |
+| `ADMIN_GITHUB_USERNAME` | Optional | Username bootstrapped as `SUPER_ADMIN` on startup (in addition to default `dev_trainee`) |
 | `PORT` | Optional | Backend server port (Default: `8787`) |
 | `VITE_PORT` | Optional | Frontend dev server port (Default: `3000`) |
 
@@ -331,7 +342,7 @@ npm run lint      # TypeScript validation
 > **Note**: **Nexus Teams (Visual Configurator)** (React Flow multi-agent hierarchy designer) and **BYOK Key Manager** are directly accessible via the persistent bottom utility toolbar in the left sidebar.
 
 ### Admin Surfaces (RBAC-Gated)
-- **Government Analytics Dashboard**: Full-screen governance interface accessible via Top Header or Sidebar for authenticated `ANALYST` / `REVIEWER` / `SUPER_ADMIN` users.
+- **Government Analytics Dashboard**: Full-screen governance interface accessible via the permanent left `Sidebar.tsx` for authenticated `ANALYST` / `REVIEWER` / `SUPER_ADMIN` users (and auto-seeded `dev_trainee` in local development).
   - **Paired Confidence Metrics**: Placement rates are never presented alone — always accompanied by active response rates.
   - **District Migration Analytics**: Dual view toggling between Trainee Home District and Actual Placement District with inbound labor migration streams.
   - **Cohort Performance**: Cohort-by-cohort Recharts bar charts tracking outcome milestones.
@@ -347,7 +358,8 @@ npm run lint      # TypeScript validation
 
 ---
 
-## License & Author
+## Repository & License
 
+- **Repository**: [https://github.com/ayuushhxx/NEXIS.git](https://github.com/ayuushhxx/NEXIS.git)
 - **License**: MIT
-- **Author**: [prkhrexists](https://github.com/prkhrexists)
+- **Author**: [prkhrexists](https://github.com/prkhrexists) / [ayuushhxx](https://github.com/ayuushhxx)

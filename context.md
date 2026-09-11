@@ -13,13 +13,13 @@
 | **Frontend Framework** | React 19, TypeScript, Vite, TailwindCSS v4 |
 | **3D Simulation Engine** | Three.js, three-pathfinding (NavMesh & Character Pathing) |
 | **State Management** | Zustand (3 specialized stores: `coreStore`, `teamStore`, `uiStore`) |
-| **UI Components & Icons** | Lucide React, React Flow (`@xyflow/react`), React Markdown, remark-gfm |
+| **UI Components & Icons** | Lucide React, React Flow (`@xyflow/react`), Recharts, React Markdown, remark-gfm |
 | **Backend API Server** | Express.js 5.x (Node.js) |
 | **AI Integration** | Google Gemini API (`@google/genai`), Sarvam AI API |
-| **Job Search Provider** | Serper.dev API |
+| **Job Search Provider** | Serper.dev API & Autonomous Gemini Synthesis |
 | **Document Generation** | PDFKit (Backend server rendering), jsPDF (Frontend client rendering), `pdf-parse` |
-| **Authentication** | GitHub OAuth |
-| **Data Persistence** | Prisma ORM v5 + PostgreSQL (Supabase / Neon / self-hosted) |
+| **Authentication** | GitHub OAuth, LinkedIn OIDC, SMS OTP (MSG91 / Dev Console) |
+| **Data Persistence** | Prisma ORM v5 (SQLite default in dev `file:./dev.db`, PostgreSQL for prod) |
 
 ---
 
@@ -42,7 +42,7 @@ Forge v3 operates as a dual-process architecture:
 │  │  Express Backend API (Node.js, Port 8787)             │  │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐    │  │
 │  │  │  Routes   │  │ Services │  │     Utils        │    │  │
-│  │  │ (15 files)│→ │(12 files)│  │ (auth, consent)  │    │  │
+│  │  │ (16 files)│→ │(12 files)│  │ (auth, consent)  │    │  │
 │  │  └──────────┘  └────┬─────┘  └──────────────────┘    │  │
 │  └──────────────────────┼────────────────────────────────┘  │
 │                         │                                    │
@@ -57,7 +57,7 @@ Forge v3 operates as a dual-process architecture:
 ```
 
 1. **Frontend Server (Vite)**: Runs on port `3000` (http://localhost:3000). Handles real-time WebGL rendering, character animation state machines, React Flow node canvas, and dashboard interfaces.
-2. **Backend API (Express)**: Runs on port `8787` (http://localhost:8787). Handles PDF parsing, multi-agent AI prompt orchestration, Serper web queries, PDF generation, and interview engines.
+2. **Backend API (Express)**: Runs on port `8787` (http://localhost:8787). Handles PDF parsing, multi-agent AI prompt orchestration, Serper web queries, autonomous job synthesis, PDF generation, and interview engines.
 
 ---
 
@@ -73,11 +73,14 @@ Forge v3 operates as a dual-process architecture:
    - Structured JSON resume data
 4. **PDF Compilation**: `POST /api/resume/render-pdf` compiles A4 printable PDF using PDFKit.
 
-### 4.2 Blue Ocean Job Discovery (`Nexus-Hunter`)
-1. **Query Formulation**: `POST /api/jobs/discover` receives candidate title and target industry.
-2. **Serper Search**: Queries Google via Serper.dev with precision queries (e.g. `site:careers.*`, direct hiring boards).
-3. **AI Ranking**: Gemini filters out aggregator noise (LinkedIn/Indeed spam) and prioritizes direct high-intent hiring pages.
-4. **Target Delivery**: Delivers ranked job matches with fit score and application URLs.
+### 4.2 Autonomous Role-Adaptive Job Discovery (`Nexus-Hunter`)
+1. **Query Formulation**: `POST /api/jobs/discover` receives candidate target role, domain, and parsed resume summary.
+2. **Multi-Mode Discovery Pipeline**:
+   - **Mode 1: Serper Web Search (`gemini-serper`)**: When `SERPER_API_KEY` is provided, queries Google via Serper.dev with precision queries (e.g. `site:careers.*`, direct hiring boards) and runs Gemini alignment scoring.
+   - **Mode 2: Autonomous LLM Synthesis (`gemini-autonomous`)**: When `SERPER_API_KEY` is omitted or returns 0 matches, Google Gemini autonomously generates 3 hyper-realistic, high-fit job opportunities tailored specifically to the candidate's actual `targetRole` and `resume`.
+   - **Mode 3: Dynamic Adaptive Fallback (`adaptive-fallback`)**: When external LLM quotas or networks are unavailable, generates dynamic, role-adaptive opportunities tailored to the candidate's specific vocational domain (replacing static hardcoded defaults).
+3. **Blue Ocean Scoring**: Prioritizes direct career pages and unlisted openings over saturated aggregator boards (LinkedIn/Indeed spam).
+4. **Target Delivery**: Delivers ranked job matches with fit score, alignment rationale, competition level, and application URLs.
 
 ### 4.3 Interactive Cross-Examination (`Nexus-Mirror`)
 1. **Question Generation**: `POST /api/interview/generate` generates role-specific technical and behavioral questions.
@@ -85,10 +88,22 @@ Forge v3 operates as a dual-process architecture:
 3. **Recursive Cross-Questioning**: `POST /api/interview/cross-question` analyzes candidate answer, detects weaknesses/ambiguity, and increases pressure with targeted follow-ups.
 4. **Heuristic Fallback**: Includes a rule-based fallback engine if external LLM quotas are reached.
 
-### 4.4 LinkedIn Integration
-1. **Verified Candidate Identity**: Ingestion via LinkedIn OIDC.
-2. **Profile PDF Upload**: Profile PDF upload mechanism extracting experience inline via `pdf-parse` (no separate `pdfExtractor.js` service needed).
-3. **STAR-Method Bullet Extraction**: Automated STAR-method resume bullet extraction from work history.
+### 4.4 LinkedIn Integration & Profile Ingestion
+1. **Verified Candidate Identity**: Ingestion via LinkedIn OIDC (`GET /api/linkedin/auth`, `GET /api/linkedin/callback`).
+2. **Profile PDF Upload**: Profile PDF upload mechanism (`POST /api/linkedin/extract-pdf`) extracting experience inline via `pdf-parse` (no separate service needed).
+3. **STAR-Method Bullet Extraction**: Automated STAR-method resume bullet extraction from extracted work history.
+
+### 4.5 Dual-Mode OTP & Identity Verification Architecture
+1. **Developer / Local Mode**: When running without SMS gateway credentials, 6-digit OTP codes are logged directly to the backend terminal console (`[OTP Service] Code: XXXXXX`). This enables instant, friction-free local development and evaluation without phone or gateway dependencies.
+2. **Production Mode**: When `MSG91_AUTH_KEY` and `MSG91_TEMPLATE_ID` are configured, OTPs are securely dispatched via the MSG91 SMS gateway using TRAI DLT-approved transactional templates.
+3. **Zero-Latency Admin Bypass**: `src/interface/admin/useIsAdmin.ts` eagerly initializes `isAdmin: true` for development tokens (`dev_trainee`, `mock_*`, `dev_*`), and `server/lib/seedAdminUser.js` auto-seeds `dev_trainee` as `SUPER_ADMIN` in the database on startup.
+
+### 4.6 Non-Blocking DPDP Consent & Onboarding De-Escalation
+1. **Consent-First Architecture**: Gated by India's Digital Personal Data Protection (DPDP) Act with four granular scopes: `JOB_SEARCH_DATA`, `EMPLOYER_SHARING`, `ANALYTICS`, `GOVT_CROSS_CHECK`.
+2. **De-Escalation & Non-Blocking Dismissal**: `src/interface/onboarding/ConsentScreen.tsx` includes:
+   - Top-right close button (`X`) and backdrop dismissal.
+   - "Skip for now" demo mode button allowing reviewers to explore the 3D simulation and dashboard without committing consent scopes immediately.
+   - Inline "Continue Anyway" error bypass inside the error banner if network or database latency occurs.
 
 ---
 
@@ -98,19 +113,20 @@ Forge v3 operates as a dual-process architecture:
 c:\HACKATHON\SIH\FORG\
 ├── server/                          # Express.js backend API (Port 8787)
 │   ├── index.js                     # Server entrypoint & middleware setup
-│   ├── config.js                    # Environment constants & API keys
+│   ├── config.js                    # Environment constants & API keys (Gemini, Sarvam, LinkedIn, MSG91)
 │   ├── middleware/
 │   │   └── upload.js                # Multer PDF memory storage handler
 │   ├── lib/
 │   │   ├── prisma.js                # Singleton PrismaClient instance
-│   │   └── seedAdminUser.js         # Bootstrap SUPER_ADMIN from ADMIN_GITHUB_USERNAME env var at startup
+│   │   └── seedAdminUser.js         # Auto-seeds SUPER_ADMIN (dev_trainee + ADMIN_GITHUB_USERNAME)
 │   ├── routes/
 │   │   ├── health.js                # GET /api/health
 │   │   ├── resume.js                # POST /api/resume/extract, tailor, render-pdf
 │   │   ├── github.js                # GET /api/github/auth, user, repos
+│   │   ├── linkedinAuth.js          # GET /api/linkedin/auth, callback; POST /api/linkedin/extract-pdf
 │   │   ├── chat.js                  # POST /api/chat/director
 │   │   ├── interview.js             # POST /api/interview/generate, cross-question
-│   │   ├── jobs.js                  # POST /api/jobs/discover
+│   │   ├── jobs.js                  # POST /api/jobs/discover (Gemini Serper / Autonomous / Fallback)
 │   │   ├── programs.js              # POST /api/programs/recommend
 │   │   ├── trainee.js               # POST/GET /api/trainee/profile (OTP-gated creation)
 │   │   ├── consent.js               # POST/GET /api/consent; GET /api/consent/:traineeId
@@ -128,7 +144,7 @@ c:\HACKATHON\SIH\FORG\
 │   │   ├── interviewEngine.js       # Cross-questioning & pressure rating engine
 │   │   ├── matchingService.js       # Jaro-Winkler similarity scoring & DedupCandidate creation
 │   │   ├── mergeService.js          # Atomic Prisma $transaction merge (mergeTrainees)
-│   │   ├── otpService.js            # OTP generation, hashing, MSG91 dispatch & verification
+│   │   ├── otpService.js            # Dual-mode OTP generation, hashing, console/MSG91 dispatch & verification
 │   │   ├── notificationService.js   # Provider-agnostic check-in messaging stub
 │   │   ├── govtVerificationService.js # Swappable e-Shram & UDYAM registry checks
 │   │   ├── relevanceScoringService.js # 3-signal course/provider relevance scoring engine
@@ -147,8 +163,7 @@ c:\HACKATHON\SIH\FORG\
 │   │       ├── teamStore.ts         # Agent team definitions, custom architectures
 │   │       └── uiStore.ts           # Sidebar active tabs, modal states, BYOK keys
 │   ├── interface/                   # React UI components & views
-│   │   ├── Header.tsx               # Top navigation & system status
-│   │   ├── Sidebar.tsx              # Permanent left navigation menu (8 views)
+│   │   ├── Sidebar.tsx              # Permanent left navigation menu (8 views + admin + utilities)
 │   │   ├── PhaseOneControlPanel.tsx # Resume upload & JD input controls
 │   │   ├── SimulationView.tsx       # 3D Three.js WebGL canvas wrapper
 │   │   ├── KanbanPanel.tsx          # Resizable application pipeline kanban
@@ -161,12 +176,12 @@ c:\HACKATHON\SIH\FORG\
 │   │   ├── LinkedInIntegrationView.tsx # Section: LinkedIn Profile Integration & STAR bullets
 │   │   ├── AgentDetailDrawer.tsx    # Slide-in inspector for selected agent
 │   │   ├── onboarding/              # 2-step DPDP onboarding overlay
-│   │   │   ├── ConsentScreen.tsx    # Step 1: DPDP multi-scope consent dialog
+│   │   │   ├── ConsentScreen.tsx    # Step 1: DPDP multi-scope consent dialog (non-blocking dismissal)
 │   │   │   └── TraineeProfileSetup.tsx # Step 2: OTP-gated vocational record setup modal
 │   │   ├── admin/                   # Admin-gated panel components (RBAC-gated)
 │   │   │   ├── AnalyticsDashboard.tsx # Government & provider analytics dashboard (Recharts, migration, paired rates)
 │   │   │   ├── DedupReviewPanel.tsx # Dedup candidate review, scan trigger, OTP-gated merge
-│   │   │   └── useIsAdmin.ts        # Hook: GET /api/admin/whoami → { isAdmin, role, loading }
+│   │   │   └── useIsAdmin.ts        # Hook: eager admin check + GET /api/admin/whoami
 │   │   ├── employer/                # Standalone public employer verification portal
 │   │   │   └── EmployerVerificationPage.tsx # Lightweight portal bypassing 3D scene/login (/verify/:token)
 │   │   ├── provider/                # Standalone public provider analytics portal
@@ -232,12 +247,22 @@ c:\HACKATHON\SIH\FORG\
 cp .env.example .env
 ```
 Key environment variables:
-- `GEMINI_API_KEY`: Google Gemini LLM API Key (Required for AI generation)
+- `DATABASE_URL`: Database connection string (Default: `file:./dev.db` for SQLite; or PostgreSQL connection string e.g. `postgresql://user:pass@host:5432/db` for production)
+- `GEMINI_API_KEY`: Google Gemini LLM API Key (Required for AI generation and autonomous job synthesis)
 - `SARVAM_API_KEY`: Sarvam AI API Key (Required for fast text inference)
-- `SERPER_API_KEY`: Serper.dev Key (For Nexus-Hunter Google Search)
+- `SERPER_API_KEY`: Serper.dev Key (Optional — for live Google job search; autonomous Gemini fallback activates if omitted)
+- `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET`: LinkedIn OAuth App credentials
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`: GitHub OAuth App keys (Optional)
+- `MSG91_AUTH_KEY` / `MSG91_TEMPLATE_ID`: MSG91 SMS gateway credentials (Optional — if omitted, OTPs log to terminal console)
+- `ADMIN_GITHUB_USERNAME`: Auto-bootstrapped `SUPER_ADMIN` GitHub username (in addition to default `dev_trainee`)
 - `PORT`: Backend port (Default: `8787`)
 - `VITE_PORT`: Frontend port (Default: `3000`)
+
+> [!TIP]
+> **Zero-Friction Local OTP Testing**: In local development, you do not need an SMS provider or SIM card. Whenever an OTP is requested via mobile authentication, the 6-digit verification code is printed directly into the backend terminal console:
+> ```
+> [OTP Service] Code for +919876543210: 481920 (dev mode - no SMS dispatched)
+> ```
 
 ### Execution Commands
 ```powershell
@@ -251,31 +276,31 @@ npm run dev:web
 npm run dev:api
 
 # Compile production build
- npm run build
+npm run build
 
 # TypeScript validation
- npm run lint
+npm run lint
 
 # Prisma: apply pending migrations to dev.db
- npm run db:migrate
+npm run db:migrate
 
 # Prisma: open Studio visual DB browser
- npm run db:studio
+npm run db:studio
 
 # Seed synthetic ControlGroupRecord rows (200 by default)
 # IMPORTANT: these are SYNTHETIC illustrative rows — not real data
- npm run db:seed-control
+npm run db:seed-control
 # Custom count:
- node server/scripts/seedControlGroup.js 500
+node server/scripts/seedControlGroup.js 500
 # Force re-seed (delete all existing rows first):
- node server/scripts/seedControlGroup.js 200 --force
+node server/scripts/seedControlGroup.js 200 --force
 ```
 
 ---
 
 ## 9. Data Layer
 
-Forge v3 uses **Prisma ORM v5** with **PostgreSQL** as the primary datasource (e.g. Neon, Supabase, AWS RDS, or self-hosted PostgreSQL). Local SQLite development migrations have been retired in favor of native PostgreSQL persistence. All models use portable Prisma types (`String`, `Boolean`, `DateTime`, `Float`) ensuring consistent behavior across cloud and containerized environments.
+Forge v3 uses **Prisma ORM v5** with **SQLite** (`file:./dev.db`) as the default local development datasource for zero-friction setup, and fully supports **PostgreSQL** (e.g. Neon, Supabase, AWS RDS, or self-hosted PostgreSQL) for staging and production deployments. All models use portable Prisma types (`String`, `Boolean`, `DateTime`, `Float`) ensuring consistent behavior across cloud and containerized environments.
 
 ### Models
 
@@ -514,7 +539,7 @@ All aggregation endpoints support consistent query parameters:
 
 1. **Administrative Analytics Dashboard (`src/interface/admin/AnalyticsDashboard.tsx`)**:
    - **Access Control**: Gated via `useIsAdmin()`; renders Access Denied if caller lacks an admin role.
-   - **Accessible Surfaces**: Reachable from the top `Header.tsx` ("Analytics" button) and the permanent left `Sidebar.tsx` ("Admin Console" section) when `isAdmin` is true.
+   - **Accessible Surfaces**: Reachable directly from the permanent left `Sidebar.tsx` ("Admin Console" section) when `isAdmin` is true.
    - **Visual Excellence & Charting (`recharts`)**:
      - **Overview Cards**: Features placement rate prominently paired directly with response rate inside the same card (e.g. `87.5% Placement Rate (based on 62.5% response rate)`).
      - **District Section**: Features interactive tab switching between **Home District** (`Trainee.district`) and **Placement District** (`OutcomeCheckIn.placementDistrict`), rendering dual Recharts bar charts showing placement rate and response rate per district, plus inbound migration origin streams (`topHomeDistricts`).
