@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { getAllAgents } from '../../data/agents';
-import { AgentState, CharacterState } from '../../types';
+import { AgentState, CharacterState, SkillProfile } from '../../types';
 import { useTeamStore, getActiveAgentSet } from './teamStore';
 import { DEFAULT_MODELS } from '../../core/llm/constants';
 
@@ -20,6 +20,22 @@ export const useUiStore = create<CharacterState>()(
     isTyping: false,
     chatMessages: [],
     inspectorTab: 'info',
+    activeSidebarTab: 'dashboard',
+    setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),
+
+    skillProfile: null,
+    setSkillProfile: (profile: SkillProfile | null) => set({ skillProfile: profile }),
+
+    jobMatchesCurrent: [],
+    jobMatchesReachable: [],
+    setJobMatches: (mode, jobs) => set(s => ({
+      ...s,
+      [mode === 'current' ? 'jobMatchesCurrent' : 'jobMatchesReachable']: jobs
+    })),
+
+    recommendedPrograms: {},
+    setRecommendedPrograms: (programs) => set({ recommendedPrograms: programs }),
+
     agentStatuses: {},
     setAgentStatus: (index: number, status: AgentState) => set((s) => ({
       agentStatuses: { ...s.agentStatuses, [index]: status }
@@ -29,6 +45,12 @@ export const useUiStore = create<CharacterState>()(
     byokError: null,
     setBYOKOpen: (open: boolean, error: string | null = null) =>
       set({ isBYOKOpen: open, byokError: error }),
+
+    isDedupReviewOpen: false,
+    setDedupReviewOpen: (open: boolean) => set({ isDedupReviewOpen: open }),
+
+    isAnalyticsDashboardOpen: false,
+    setAnalyticsDashboardOpen: (open: boolean) => set({ isAnalyticsDashboardOpen: open }),
 
     activeAuditTaskId: null,
     setActiveAuditTaskId: (taskId: string | null) => set({ activeAuditTaskId: taskId }),

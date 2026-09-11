@@ -27,7 +27,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
           <div className="flex justify-center mb-8">
             <img
               src="images/forge-v3.svg"
-              alt="Forge v3 Logo"
+              alt="NEXIS Logo"
               width={256}
               className="h-auto"
             />
@@ -39,7 +39,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
 
           <div className="space-y-6 text-zinc-500 text-[15px] leading-relaxed text-center sm:text-left">
             <p>
-              Forge v3 is a simulation-first workspace where you orchestrate a Nexus Agent Network for resume optimization, job targeting, and interview preparation.
+              NEXIS is a simulation-first workspace where you orchestrate a Nexus Agent Network for resume optimization, job targeting, and interview preparation.
             </p>
             <p>
               Built to make career strategy operational with visual intelligence, pipeline execution, and guided action loops without breaking the immersive 3D workflow.

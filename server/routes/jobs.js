@@ -19,16 +19,38 @@ router.post('/jobs/discover', async (req, res) => {
   const targetRole = String(req.body?.targetRole || 'AI Engineer').trim()
   const geminiKey = String(req.body?.key || GEMINI_API_KEY).trim()
   const serperKey = String(req.body?.serperKey || SERPER_API_KEY || '').trim()
+  const mode = req.body?.mode === 'reachable' ? 'reachable' : 'current'
+  const skillProfile = req.body?.skillProfile || null
 
   if (!resume) {
     res.status(400).json({ error: 'Resume content is required for Nexus-Hunter discovery.' })
     return
   }
 
+  let queryTerms = targetRole
+  let extraPromptContext = ''
+
+  if (skillProfile) {
+    if (mode === 'reachable') {
+      const candidateNames = new Set((skillProfile.candidate_skills || []).map((s) => s.skill.toLowerCase()))
+      const gaps = (skillProfile.jd_required_skills || []).filter((s) => !candidateNames.has(s.toLowerCase()))
+      if (gaps.length > 0) {
+        queryTerms += ` ${gaps.slice(0, 2).join(' ')}`
+      }
+      extraPromptContext = `MODE: REACHABLE AFTER UPSKILLING\nThe candidate is currently upskilling and closing their skill gaps: ${gaps.join(', ')}. Evaluate alignment ASSUMING the candidate has already acquired these skills.`
+    } else {
+      const topSkills = (skillProfile.candidate_skills || []).filter((s) => s.demonstrated).map((s) => s.skill)
+      if (topSkills.length > 0) {
+        queryTerms += ` ${topSkills.slice(0, 2).join(' ')}`
+      }
+      extraPromptContext = `MODE: CURRENT FIT\nEvaluate alignment based strictly on the candidate's existing demonstrated skills.`
+    }
+  }
+
   const huntQueries = [
-    `site:workatastartup.com ${targetRole} remote`,
-    `site:boards.greenhouse.io ${targetRole} machine learning`,
-    `site:jobs.lever.co ${targetRole} llm`,
+    `site:workatastartup.com ${queryTerms} remote`,
+    `site:boards.greenhouse.io ${queryTerms}`,
+    `site:jobs.lever.co ${queryTerms}`,
   ]
 
   try {
@@ -40,6 +62,7 @@ router.post('/jobs/discover', async (req, res) => {
       'Task: choose top 3 Prime Targets from discovered jobs using deep reasoning.',
       'Apply alignment filtering against the resume, including hidden fits from niche projects.',
       'Compute Blue Ocean preference: direct career pages should score higher than crowded LinkedIn easy-apply posts.',
+      extraPromptContext,
       'Return strict JSON array with exactly 3 objects and fields:',
       '{',
       '  "job_title": string,',
@@ -52,7 +75,7 @@ router.post('/jobs/discover', async (req, res) => {
       `TARGET ROLE: ${targetRole}`,
       `RESUME:\n${resume}`,
       `DISCOVERED JOB CANDIDATES:\n${JSON.stringify(rawResults, null, 2)}`,
-    ].join('\n\n')
+    ].filter(Boolean).join('\n\n')
 
     const llmRaw = await callGeminiTextWithRetry({
       apiKey: geminiKey,

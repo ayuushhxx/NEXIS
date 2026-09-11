@@ -340,3 +340,96 @@ export async function ensureStructuredResume({ resumeText, jd, sarvamKey, gemini
     return normalizeStructuredResume(null, resumeText, jd)
   }
 }
+
+/**
+ * Validates and cleans the `skillProfile` block returned by the LLM.
+ * Computes match_pct server-side: matched_required / total_required * 100.
+ */
+export function normalizeSkillProfile(raw) {
+  if (!raw || typeof raw !== 'object') return null
+
+  const safeStrArr = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [])
+  const safeStr = (v, fallback = '') => (typeof v === 'string' && v.trim() ? v.trim() : fallback)
+  const safeNum = (v, fallback = 0) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback }
+
+  const jd_required_skills = safeStrArr(raw.jd_required_skills)
+  const jd_nice_to_have_skills = safeStrArr(raw.jd_nice_to_have_skills)
+
+  const candidate_skills = Array.isArray(raw.candidate_skills)
+    ? raw.candidate_skills
+        .map((x) => ({
+          skill: safeStr(x?.skill),
+          demonstrated: Boolean(x?.demonstrated),
+        }))
+        .filter((x) => x.skill)
+    : []
+
+  const candidateSkillNames = new Set(candidate_skills.map((x) => x.skill.toLowerCase()))
+
+  // Compute match_pct: required skills that appear in candidate_skills (case-insensitive)
+  const matchedRequired = jd_required_skills.filter((s) =>
+    candidateSkillNames.has(s.toLowerCase())
+  )
+  const match_pct =
+    jd_required_skills.length > 0
+      ? Math.round((matchedRequired.length / jd_required_skills.length) * 100)
+      : null
+
+  const expSummary = raw.candidate_experience_summary || {}
+
+  return {
+    jd_role_title: safeStr(raw.jd_role_title, 'Target Role'),
+    jd_seniority: safeStr(raw.jd_seniority, 'Mid'),
+    jd_required_skills,
+    jd_nice_to_have_skills,
+    candidate_skills,
+    candidate_experience_summary: {
+      level: safeStr(expSummary.level, 'Mid-level'),
+      years: safeNum(expSummary.years, 0),
+      domains: safeStrArr(expSummary.domains),
+    },
+    match_pct,
+    matched_required: matchedRequired,
+  }
+}
+
+/**
+ * Keyword-extraction fallback when the LLM call fails entirely.
+ * Uses simple tokenization to infer likely required skills from the JD.
+ */
+export function buildFallbackSkillProfile(resume, jd) {
+  const STOP = new Set(['with', 'from', 'that', 'this', 'your', 'have', 'need', 'will', 'must', 'able',
+    'using', 'work', 'team', 'strong', 'good', 'knowledge', 'experience', 'skills', 'role', 'looking'])
+
+  const jdWords = tokenize(jd).filter((w) => w.length > 3 && !STOP.has(w))
+  const resumeTokens = new Set(tokenize(resume))
+
+  // Most-frequent JD tokens as inferred required skills
+  const freq = new Map()
+  jdWords.forEach((w) => freq.set(w, (freq.get(w) || 0) + 1))
+  const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k)
+  const jd_required_skills = sorted.slice(0, 10)
+  const jd_nice_to_have_skills = sorted.slice(10, 16)
+
+  const candidate_skills = jd_required_skills.map((skill) => ({
+    skill,
+    demonstrated: resumeTokens.has(skill),
+  }))
+
+  const matchedRequired = jd_required_skills.filter((s) => resumeTokens.has(s))
+  const match_pct = jd_required_skills.length > 0
+    ? Math.round((matchedRequired.length / jd_required_skills.length) * 100)
+    : null
+
+  return {
+    jd_role_title: 'Target Role',
+    jd_seniority: 'Mid',
+    jd_required_skills,
+    jd_nice_to_have_skills,
+    candidate_skills,
+    candidate_experience_summary: { level: 'Mid-level', years: 0, domains: [] },
+    match_pct,
+    matched_required: matchedRequired,
+  }
+}
+

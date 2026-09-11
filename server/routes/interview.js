@@ -6,13 +6,92 @@
  */
 
 import { Router } from 'express'
-import { DEFAULT_SARVAM_KEY } from '../config.js'
+import { GEMINI_API_KEY, DEFAULT_SARVAM_KEY, SARVAM_MODEL } from '../config.js'
+import { callGeminiTextWithRetry } from '../services/gemini.js'
 import { callSarvamWithRetry } from '../services/sarvam.js'
 import { buildMirrorFallbackCrossQuestion } from '../services/interviewEngine.js'
 import { normalizeSarvamError } from '../utils/errors.js'
 import { tryParseJsonLoose } from '../utils/helpers.js'
 
 const router = Router()
+
+router.post('/interview/brief', async (req, res) => {
+  const roleTitle = String(req.body?.roleTitle || '').trim()
+  const seniority = String(req.body?.seniority || '').trim()
+  const requiredGaps = Array.isArray(req.body?.requiredGaps) ? req.body.requiredGaps : []
+  const niceGaps = Array.isArray(req.body?.niceGaps) ? req.body.niceGaps : []
+  const matchedSkills = Array.isArray(req.body?.matchedSkills) ? req.body.matchedSkills : []
+  const geminiKey = String(req.body?.key || GEMINI_API_KEY).trim()
+
+  if (!roleTitle) {
+    return res.status(400).json({ error: 'roleTitle is required for interview brief.' })
+  }
+
+  const prompt = [
+    `You are Nexus-Strategist preparing a candidate for a ${seniority} ${roleTitle} interview.`,
+    `The candidate's matched skills are: ${matchedSkills.join(', ') || 'various technical skills'}.`,
+    `Their required skill gaps (topics they will be grilled on): ${requiredGaps.join(', ') || 'none identified'}.`,
+    `Nice-to-have gaps: ${niceGaps.join(', ') || 'none'}.`,
+    `Generate a focused pre-interview briefing with EXACTLY this JSON shape:`,
+    `{`,
+    `  "focus_areas": [{ "category": "technical"|"behavioral"|"system-design", "topic": string, "why": string, "tip": string }],`,
+    `  "gap_topics": [{ "skill": string, "likely_question_angle": string, "prep_suggestion": string }],`,
+    `  "key_strength_to_lead_with": string,`,
+    `  "overall_readiness_note": string`,
+    `}`,
+    `Rules:`,
+    `- focus_areas: exactly 4 entries, mix of technical, behavioral, system-design categories`,
+    `- gap_topics: one entry per required gap skill (max 5)`,
+    `- Be specific to the actual role title and seniority level — no generic boilerplate`,
+    `- For gap_topics, give a concrete prep suggestion (e.g., "Build a toy X in 2 hours to get hands-on experience")`,
+  ].join('\n\n')
+
+  try {
+    const raw = await callGeminiTextWithRetry({
+      apiKey: geminiKey,
+      prompt,
+      systemInstruction: 'You are Nexus-Strategist. Return strict JSON only, no markdown.',
+      attempts: 3,
+    })
+
+    let parsed = tryParseJsonLoose(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      const objMatch = String(raw || '').match(/\{[\s\S]*\}/)
+      parsed = objMatch ? JSON.parse(objMatch[0]) : null
+    }
+
+    if (!parsed) {
+      throw new Error('Gemini returned invalid brief payload')
+    }
+
+    res.json({
+      focus_areas: Array.isArray(parsed.focus_areas) ? parsed.focus_areas.slice(0, 4) : [],
+      gap_topics: Array.isArray(parsed.gap_topics) ? parsed.gap_topics.slice(0, 5) : [],
+      key_strength_to_lead_with: String(parsed.key_strength_to_lead_with || ''),
+      overall_readiness_note: String(parsed.overall_readiness_note || ''),
+    })
+  } catch (err) {
+    // Minimal graceful fallback
+    res.json({
+      focus_areas: [
+        { category: 'technical', topic: 'Core domain skills', why: 'Foundational for this role', tip: 'Review your most recent project in this domain' },
+        { category: 'behavioral', topic: 'Ownership and delivery', why: 'Expected at this seniority level', tip: 'Prepare a STAR story about a high-stakes delivery' },
+        { category: 'system-design', topic: 'Scalability trade-offs', why: 'Common at senior+ levels', tip: 'Practice a back-of-envelope scaling exercise' },
+        { category: 'technical', topic: 'Gap skill preparation', why: 'You have identified gaps in required skills', tip: `Focus on: ${requiredGaps.slice(0, 2).join(', ') || 'your gap areas'}` },
+      ],
+      gap_topics: requiredGaps.slice(0, 5).map(skill => ({
+        skill,
+        likely_question_angle: `Explain how you would use ${skill} in a production environment`,
+        prep_suggestion: `Spend 1-2 hours building a minimal project using ${skill} to get hands-on experience`,
+      })),
+      key_strength_to_lead_with: matchedSkills[0] ? `Your demonstrated expertise in ${matchedSkills[0]}` : 'Your production delivery track record',
+      overall_readiness_note: `Review the ${requiredGaps.length} required skill gaps before the interview.`,
+      fallback: true,
+      warning: err instanceof Error ? err.message : 'Brief generation fallback activated',
+    })
+  }
+})
+
 
 router.post('/interview/generate', async (req, res) => {
   const resume = String(req.body?.resume || '').trim()
@@ -40,7 +119,7 @@ router.post('/interview/generate', async (req, res) => {
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: 'sarvam-m',
+        model: SARVAM_MODEL,
         messages: [
           { role: 'system', content: 'You are Nexus-Mirror. Return strict JSON only.' },
           { role: 'user', content: prompt },

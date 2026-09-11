@@ -1,0 +1,337 @@
+// FILE: prisma/schema.prisma
+// PURPOSE: Prisma data model for the Trainee identity and consent layer.
+// DATASOURCE: SQLite (dev) / PostgreSQL-ready (prod). Uses portable Prisma types (String, Boolean, DateTime, Float).
+// NOTE: Only portable Prisma types are used (String, Boolean, DateTime, Float).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Trainee ───────────────────────────────────────────────────────────────────
+// Persistent identity record for a vocational-training candidate.
+// Independent of GitHub OAuth — githubId is an optional soft-link so a logged-in
+// GitHub user can own exactly one Trainee profile.  One Trainee → N Enrolments.
+model Trainee {
+  id                String          @id @default(cuid())
+  phoneNumber       String          @unique
+  name              String
+  preferredLanguage String          @default("en")
+  githubId          String?         @unique // optional: GitHub numeric user ID as string
+  linkedinId        String?         @unique
+  linkedinVerified  Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  phoneVerified     Boolean         @default(false)
+
+  // ── Optional matching fields (added v0.3.0) ──────────────────────────────
+  // These fields improve the passive similarity-matching signal used by the
+  // deduplication service. They are all nullable — existing records keep working.
+  dateOfBirth       DateTime?       // Used for exact-match dedup signal
+  district          String?         // Used for exact-match dedup signal
+
+  // IMPORTANT — aadhaarLast4Hash security note:
+  // This field stores ONLY a SHA-256 hash of the last 4 digits of the Aadhaar
+  // number (e.g. SHA-256("4567")). It is a WEAK PASSIVE MATCHING SIGNAL ONLY —
+  // a 4-digit space (0000–9999) is trivially brute-forceable. It MUST NOT be
+  // used for identity verification or access control. Full Aadhaar authentication
+  // (UIDAI AUA/KUA e-KYC) is out of scope for this project. The raw digits are
+  // never stored; hashing happens server-side before any write.
+  aadhaarLast4Hash  String?
+
+  // ── Added v0.3.8 ──────────────────────────────────────────────────────────
+  // Optional educational background captured during onboarding.
+  // Used as a stratification signal in computeImpact() for the illustrative
+  // synthetic control group comparison. Nullable — all existing records keep working.
+  // Allowed values (enforced in application layer, not DB):
+  //   "Below 10th" | "10th Pass" | "12th Pass" | "Graduate"
+  priorQualification String?
+
+  // mergedIntoId — soft-delete marker for merge reconciliation.
+  // When a duplicate Trainee is merged into a canonical record, this field is
+  // set to the canonical Trainee's id. The row is NEVER hard-deleted — it acts
+  // as a permanent historical anchor. All Enrolments/ConsentRecords/OutcomeCheckIns
+  // are reassigned to the canonical Trainee before this field is set.
+  mergedIntoId      String?
+
+  enrolments            Enrolment[]
+  consentRecords        ConsentRecord[]
+  outcomeCheckIns       OutcomeCheckIn[]
+  employerVerifications EmployerVerification[]
+  govtCrossCheckResults GovtCrossCheckResult[]
+  skillGapSnapshots     SkillGapSnapshot[]
+
+  // Dedup relationships — always traineeIdA < traineeIdB (lexicographic)
+  dedupCandidatesAsA    DedupCandidate[] @relation("TraineeA")
+  dedupCandidatesAsB    DedupCandidate[] @relation("TraineeB")
+}
+
+// ── Enrolment ─────────────────────────────────────────────────────────────────
+// One row per scheme enrolment.  A Trainee can accumulate N rows over time
+// (e.g. PMKVY cohort 1, then ITI, then PMKVY cohort 2) — no uniqueness constraint
+// on (traineeId, scheme) so re-enrolment is valid.
+// certificationDate is nullable — set only when the trainee completes the course.
+model Enrolment {
+  id                String    @id @default(cuid())
+  traineeId         String
+  trainee           Trainee   @relation(fields: [traineeId], references: [id])
+  scheme            String    // e.g. "PMKVY", "ITI", "DDU-GKY"
+  courseName        String
+  providerName      String
+  cohortName        String
+  enrolmentDate     DateTime
+  certificationDate DateTime? // null until course completion
+  createdAt         DateTime  @default(now())
+}
+
+// ── ConsentRecord ─────────────────────────────────────────────────────────────
+// Append-only audit log of consent events.  Granting or revoking always inserts
+// a new row rather than mutating an existing one — "current" consent for a scope
+// is the row with the latest createdAt for that (traineeId, scope) pair.
+// version tracks which revision of the consent language the trainee agreed to.
+//
+// Allowed scope values (enforced in application layer, not DB):
+//   JOB_SEARCH_DATA | EMPLOYER_SHARING | ANALYTICS | GOVT_CROSS_CHECK
+model ConsentRecord {
+  id          String    @id @default(cuid())
+  traineeId   String
+  trainee     Trainee   @relation(fields: [traineeId], references: [id])
+  scope       String    // one of the four allowed scope strings
+  granted     Boolean
+  grantedAt   DateTime  @default(now())
+  revokedAt   DateTime? // non-null only if this record represents a revocation event
+  version     String    @default("v1") // consent-language version for audit purposes
+  createdAt   DateTime  @default(now())
+}
+
+// ── OutcomeCheckIn ─────────────────────────────────────────────────────────────
+// Records the employment outcome of a Trainee at 90/180/365-day intervals, or
+// whenever the trainee self-reports.  checkinType and status are enforced as
+// enum-like strings in the application layer (not the DB) to keep the schema
+// portable across SQLite (dev) and PostgreSQL (prod).
+//
+// Allowed checkinType: SELF_INITIATED | 90_DAY | 180_DAY | 365_DAY
+// Allowed status:      PENDING | COMPLETED | NO_RESPONSE
+// Allowed employmentStatus: EMPLOYED | SELF_EMPLOYED | SEARCHING | IN_TRAINING | OTHER
+model OutcomeCheckIn {
+  id               String    @id @default(cuid())
+  traineeId        String
+  trainee          Trainee   @relation(fields: [traineeId], references: [id])
+  checkinType      String    // SELF_INITIATED | 90_DAY | 180_DAY | 365_DAY
+  status           String    @default("PENDING") // PENDING | COMPLETED | NO_RESPONSE
+  employmentStatus String?   // EMPLOYED | SELF_EMPLOYED | SEARCHING | IN_TRAINING | OTHER
+  employerName     String?
+  wageBand         String?   // e.g. "0-10k", "10-20k", "20k+" — bands not exact figures
+  notes            String?
+  scheduledFor     DateTime? // when the system-triggered check-in is due
+  respondedAt      DateTime? // set when the trainee replies
+  createdAt        DateTime  @default(now())
+
+  // ── Outcome enrichment fields ─────────────────────────────────────────────
+  roleRelevance          String? // DIRECTLY_RELATED | SOMEWHAT_RELATED | UNRELATED
+  selfEmploymentType     String? // Free text (for SELF_EMPLOYED)
+  apprenticeshipEmployer String? // Free text / employer name (for apprenticeship)
+  nonPlacementReason     String? // SKILL_GAP | WAGE_EXPECTATION | LOCATION | NO_RESPONSE_FROM_EMPLOYERS | OTHER (for SEARCHING)
+  placementDistrict      String? // District where the trainee is actually employed/placed (distinct from Trainee.district)
+
+  employerVerification   EmployerVerification?
+}
+
+// ── EmployerVerification ───────────────────────────────────────────────────────
+// Records employer verification requests and determinations for an OutcomeCheckIn.
+// contactDomainFlag is true if employerContactEmail belongs to a common free consumer
+// provider (gmail, yahoo, etc.), surfaced as a lower-confidence signal without blocking.
+model EmployerVerification {
+  id                   String          @id @default(cuid())
+  outcomeCheckInId     String          @unique
+  outcomeCheckIn       OutcomeCheckIn  @relation(fields: [outcomeCheckInId], references: [id])
+  traineeId            String
+  trainee              Trainee         @relation(fields: [traineeId], references: [id])
+  employerNameClaimed  String
+  employerContactEmail String
+  contactDomainFlag    Boolean
+  verificationToken    String          @unique
+  tokenExpiresAt       DateTime
+  status               String          @default("PENDING") // PENDING | CONFIRMED | DENIED
+  reasonCode           String?         // SKILL_GAP | WAGE_MISMATCH | LOCATION | NO_SHOW | ROLE_MISMATCH | OTHER
+  reasonNotes          String?
+  verifiedByName       String?
+  verifiedAt           DateTime?
+  createdAt            DateTime        @default(now())
+}
+
+// ── AdminUser ─────────────────────────────────────────────────────────────────
+// RBAC table for admin-panel access. GitHub username (login) is the primary
+// identity link — it is matched against the `login` returned by resolveGithubIdentity.
+//
+// Roles (enforced in application layer — SUPER_ADMIN > REVIEWER > ANALYST):
+//   SUPER_ADMIN — full access; can manage AdminUser table
+//   REVIEWER    — can view dedup candidates and resolve merges/rejects
+//   ANALYST     — can trigger scans and view read-only admin data
+//
+// Bootstrap: if this table has zero rows on server startup and ADMIN_GITHUB_USERNAME
+// is set, seedAdminUser() creates one SUPER_ADMIN automatically.
+// After that, admin management happens via the DB itself — not the env var.
+model AdminUser {
+  id              String           @id @default(cuid())
+  githubUsername  String           @unique // GitHub login (e.g. "prkhrexists")
+  role            String           // SUPER_ADMIN | REVIEWER | ANALYST
+  createdAt       DateTime         @default(now())
+
+  actionLogs      AdminActionLog[]
+  dedupReviews    DedupCandidate[] @relation("ReviewedBy")
+}
+
+// ── AdminActionLog ────────────────────────────────────────────────────────────
+// Append-only audit trail for all admin-gated writes.  Every mutating admin
+// action must call logAdminAction() from server/utils/adminAuth.js to insert here.
+// details is a JSON-stringified object with before/after state or summary payload.
+model AdminActionLog {
+  id           String    @id @default(cuid())
+  adminUserId  String
+  admin        AdminUser @relation(fields: [adminUserId], references: [id])
+  action       String    // e.g. "DEDUP_SCAN", "MERGE_TRAINEE", "REJECT_CANDIDATE"
+  targetType   String    // e.g. "DedupCandidate", "Trainee"
+  targetId     String    // the id of the affected record
+  details      String    // JSON-stringified details (before/after state, summary)
+  createdAt    DateTime  @default(now())
+}
+
+// ── DedupCandidate ────────────────────────────────────────────────────────────
+// Represents a suspected duplicate pair identified by the matching service.
+// traineeIdA is always the lexicographically smaller of the two IDs to guarantee
+// (A, B) and (B, A) map to the same unique row.
+//
+// matchScore: weighted similarity score in [0.0, 1.0] (only rows > 0.6 are created)
+// matchReasons: JSON-stringified array of reason strings (e.g. ["name_similarity:0.92"])
+//
+// Allowed status: PENDING | CONFIRMED_MERGE | REJECTED
+// reviewedByAdminId / reviewedAt are null until an admin resolves the candidate.
+model DedupCandidate {
+  id                String     @id @default(cuid())
+  traineeIdA        String     // always the lexicographically smaller Trainee id
+  traineeA          Trainee    @relation("TraineeA", fields: [traineeIdA], references: [id])
+  traineeIdB        String
+  traineeB          Trainee    @relation("TraineeB", fields: [traineeIdB], references: [id])
+  matchScore        Float      // weighted score in (0.6, 1.0]
+  matchReasons      String     // JSON-stringified string[] of per-signal reasons
+  status            String     @default("PENDING") // PENDING | CONFIRMED_MERGE | REJECTED
+  reviewedByAdminId String?
+  reviewedBy        AdminUser? @relation("ReviewedBy", fields: [reviewedByAdminId], references: [id])
+  reviewedAt        DateTime?
+  createdAt         DateTime   @default(now())
+
+  @@unique([traineeIdA, traineeIdB])
+}
+
+// ── OtpVerification ───────────────────────────────────────────────────────────
+// Stores generated OTPs and their expiry times.
+model OtpVerification {
+  id          String   @id @default(cuid())
+  phoneNumber String
+  hashedOtp   String   // SHA-256 hash of the OTP
+  expiresAt   DateTime
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([phoneNumber])
+}
+
+// ── GovtCrossCheckResult ──────────────────────────────────────────────────────
+// Records corroboration signals from government registries (e-Shram and UDYAM)
+// for trainees who stop responding. This is a supportive corroboration signal,
+// NOT verified ground-truth placement.
+model GovtCrossCheckResult {
+  id                   String   @id @default(cuid())
+  traineeId            String
+  trainee              Trainee  @relation(fields: [traineeId], references: [id])
+  source               String   // "ESHRAM" | "UDYAM"
+  matchFound           Boolean
+  matchConfidence      Float?
+  matchedRecordSummary String?  // short human-readable description, no raw government data
+  checkedAt            DateTime @default(now())
+}
+
+// ── SkillGapSnapshot ──────────────────────────────────────────────────────────
+// Captures missing-skill keywords and ATS score from individual Resume Forge sessions.
+// Only persisted when a verified trainee profile is active (anonymous sessions are skipped).
+model SkillGapSnapshot {
+  id            String   @id @default(cuid())
+  traineeId     String
+  trainee       Trainee  @relation(fields: [traineeId], references: [id])
+  jdTitle       String   // target job title / role tailored against
+  missingSkills String   // JSON-stringified array of skill / keyword strings
+  atsScore      Float?
+  createdAt     DateTime @default(now())
+}
+
+// ── CourseRelevanceScore ──────────────────────────────────────────────────────
+// Aggregated relevance scorecard per (courseName, providerName), combining three signals:
+//   1) Employer-reported denial reasons (EmployerVerification DENIED rows)
+//   2) Trainee-reported non-placement reasons (OutcomeCheckIn SEARCHING rows)
+//   3) Aggregated skill gaps from Resume Forge sessions (SkillGapSnapshot rows)
+//
+// Employer-reported and trainee-reported reasons are tracked separately because
+// they carry different confidence levels.
+model CourseRelevanceScore {
+  id                      String   @id @default(cuid())
+  courseName              String
+  providerName            String
+  totalClaims             Int
+  confirmedCount          Int
+  deniedCount             Int
+  employerReasonBreakdown String   // JSON-stringified object of reasonCode -> count
+  traineeReasonBreakdown  String   // JSON-stringified object of nonPlacementReason -> count
+  topMissingSkills        String   // JSON-stringified array of up to 10 {skill, count} objects
+  relevanceScore          Float?   // null when totalClaims == 0 (insufficient data, not zero)
+  computedAt              DateTime @default(now())
+
+  @@unique([courseName, providerName])
+}
+
+// ── ProviderAccessToken ───────────────────────────────────────────────────────
+// Read-only access token for a specific training provider to view their own
+// aggregate placement metrics and course relevance scorecards.
+model ProviderAccessToken {
+  id           String    @id @default(cuid())
+  providerName String
+  token        String    @unique
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime?
+}
+
+// ── ControlGroupRecord ────────────────────────────────────────────────────────
+// SYNTHETIC ILLUSTRATIVE DATA — NOT REAL POPULATION.
+// These rows represent a notional comparison group for the simplified stratified
+// impact estimation feature (v0.3.8).  They are generated by a deterministic
+// seeded pseudo-random function and do NOT represent actual people who did not
+// undergo vocational training.  isSynthetic = true for all seeded rows.
+//
+// Purpose: demonstrate the *methodology* of stratified comparison (bucket by
+// ageBand + district + priorQualification, compute employment rate difference).
+// This is not a randomized controlled trial and produces no validated causal
+// estimate. See impactMeasurementService.js and context.md §15 for details.
+//
+// Field notes:
+//   ageBand — stored string derived at seed time using the same getAgeBand()
+//             function that computeImpact() applies to Trainees.  Storing avoids
+//             needing a dateOfBirth for synthetic records and prevents drift.
+//   isSynthetic — default true.  Set false on import to allow real comparison
+//             data to coexist without a schema change.
+model ControlGroupRecord {
+  id                 String   @id @default(cuid())
+  ageBand            String   // "18-25" | "26-35" | "36-45" | "46+"
+  district           String
+  priorQualification String   // "Below 10th" | "10th Pass" | "12th Pass" | "Graduate"
+  employmentStatus   String   // EMPLOYED | SELF_EMPLOYED | SEARCHING | IN_TRAINING | OTHER
+  wageBand           String?
+  isSynthetic        Boolean  @default(true)
+  createdAt          DateTime @default(now())
+}
+
+
+

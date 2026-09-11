@@ -1,15 +1,17 @@
-import { FileText, Info, KeyRound, Maximize2, MessageSquare, Search, Settings } from 'lucide-react';
+import { BarChart3, FileText, Info, KeyRound, Maximize2, MessageSquare, Search, Settings } from 'lucide-react';
 import React, { useState } from 'react';
 import packageJson from '../../package.json';
 import { useCoreStore } from '../integration/store/coreStore';
 import { useUiStore } from '../integration/store/uiStore';
 import BYOKModal from './BYOKModal';
 import InfoModal from './InfoModal';
+import { useIsAdmin } from './admin/useIsAdmin';
 
 const version = packageJson.version;
 
 const Header: React.FC = () => {
-  const { llmConfig, isBYOKOpen, setBYOKOpen } = useUiStore();
+  const { llmConfig, isBYOKOpen, setBYOKOpen, setDedupReviewOpen, setAnalyticsDashboardOpen } = useUiStore();
+  const { isAdmin } = useIsAdmin();
   const {
     setViewMode,
     setForgeMode,
@@ -53,7 +55,7 @@ const Header: React.FC = () => {
       {/* Left: Project Title */}
       <div className="flex items-center min-w-0">
         <div className="text-lg font-black tracking-[0.22em] text-darkDelegation leading-none shrink-0">
-          FORGE
+          NEXIS
         </div>
 
         <div className="flex items-center gap-3 self-start mt-3 ml-2 min-w-0">
@@ -124,6 +126,28 @@ const Header: React.FC = () => {
           <MessageSquare size={14} />
           <span className="text-[10px] font-black uppercase tracking-wider ml-1 hidden sm:inline">Nexus-Mirror</span>
         </button>
+
+        {isAdmin && (
+          <>
+            <button
+              onClick={() => setAnalyticsDashboardOpen(true)}
+              className="flex items-center gap-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-lg shadow-blue-600/20 active:scale-95 cursor-pointer h-9 shrink-0"
+              title="Analytics Dashboard"
+            >
+              <BarChart3 size={14} />
+              <span className="text-[10px] font-black uppercase tracking-wider ml-1 hidden sm:inline">Analytics</span>
+            </button>
+
+            <button
+              onClick={() => setDedupReviewOpen(true)}
+              className="flex items-center gap-2 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all shadow-lg shadow-orange-600/20 active:scale-95 cursor-pointer h-9 shrink-0"
+              title="Admin Dedup Panel"
+            >
+              <Settings size={14} className="group-hover:rotate-90 transition-transform" />
+              <span className="text-[10px] font-black uppercase tracking-wider ml-1 hidden sm:inline">Admin Dedup</span>
+            </button>
+          </>
+        )}
 
         <button
           onClick={() => setViewMode('design')}

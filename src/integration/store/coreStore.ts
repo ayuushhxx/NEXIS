@@ -5,6 +5,7 @@ import { DEFAULT_MODELS, AVAILABLE_MODELS } from '../../core/llm/constants';
 import { calculateCost } from '../../core/llm/pricing';
 import { useTeamStore } from './teamStore';
 import { useUiStore } from './uiStore';
+import { ConsentStateMap, OutcomeCheckInRecord, TraineeProfileData } from '../../types';
 
 export type TaskStatus = 'scheduled' | 'on_hold' | 'in_progress' | 'done'
 
@@ -226,6 +227,11 @@ interface CoreState {
   nexusMirrorItems: InterviewQAItem[]
   isNexusHunterOpen: boolean
 
+  // ── Trainee Identity & Outcomes ──────────────────────────────
+  traineeProfile: TraineeProfileData | null
+  consentState: ConsentStateMap | null
+  outcomeHistory: OutcomeCheckInRecord[]
+
   // ── Actions — Project —————————————————————————————————────────
   setUserBrief: (brief: string) => void;
   addReferenceImage: (base64: string) => void;
@@ -289,6 +295,11 @@ interface CoreState {
 
   // ── Simulation Sync ──────────────────────────────────────────
   setAgentHistory: (agentIndex: number, history: LLMMessage[]) => void;
+
+  // ── Actions — Trainee Identity & Outcomes ───────────────────
+  setTraineeProfile: (profile: TraineeProfileData | null) => void;
+  setConsentState: (consent: ConsentStateMap | null) => void;
+  setOutcomeHistory: (history: OutcomeCheckInRecord[]) => void;
 }
 
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
@@ -347,6 +358,9 @@ export const useCoreStore = create<CoreState>()(
       resumeForgeItems: [],
       hasResumeAnalysis: false,
       resumeAnalysis: null,
+      traineeProfile: null,
+      consentState: null,
+      outcomeHistory: [],
       runtimeKeys: {
         gemini: '',
         sarvam: '',
@@ -438,6 +452,9 @@ export const useCoreStore = create<CoreState>()(
             targetJD,
           },
         })),
+      setTraineeProfile: (traineeProfile) => set({ traineeProfile }),
+      setConsentState: (consentState) => set({ consentState }),
+      setOutcomeHistory: (outcomeHistory) => set({ outcomeHistory }),
       setResumeAnalysis: (resumeAnalysis) =>
         set({
           resumeAnalysis,

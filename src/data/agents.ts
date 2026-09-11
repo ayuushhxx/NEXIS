@@ -81,7 +81,7 @@ export const AGENTIC_SETS: AgenticSystem[] = [
           name: 'Nexus-Writer',
           description: 'STAR-metric engineer and content optimizer.',
           color: '#10b981',
-          model: 'sarvam-m',
+          model: 'sarvam-105b',
           position: { x: 0, y: 280 },
         },
         {

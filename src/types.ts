@@ -11,6 +11,56 @@ export interface ChatMessage {
 // ── Store state (pure data + simple setters) ─────────────────
 export type AgentState = 'idle' | 'moving' | 'working' | 'on_hold' | 'talking';
 
+export type ActiveSidebarTab =
+  | 'dashboard'
+  | 'skill-gaps'
+  | 'job-matches'
+  | 'recommended-programs'
+  | 'interview-prep'
+  | 'new-cv'
+  | 'my-outcome'
+  | 'linkedin-integration';
+
+export interface DiscoveredJob {
+  id: string;
+  title: string;
+  company: string;
+  url: string;
+  alignmentScore: number;
+  blueOceanScore: number;
+  nexusMatchReason: string;
+  competitionLevel: 'Low' | 'Medium' | 'High';
+  discoveredAt: number;
+  source: 'linkedin' | 'company-careers' | 'hidden';
+}
+
+export interface RecommendedProgram {
+  title: string;
+  provider: string;
+  isFree: boolean;
+  url: string;
+}
+
+export interface CandidateSkill {
+  skill: string;
+  demonstrated: boolean;
+}
+
+export interface SkillProfile {
+  jd_role_title: string;
+  jd_seniority: string;
+  jd_required_skills: string[];
+  jd_nice_to_have_skills: string[];
+  candidate_skills: CandidateSkill[];
+  candidate_experience_summary: {
+    level: string;
+    years: number;
+    domains: string[];
+  };
+  match_pct: number | null;
+  matched_required: string[];
+}
+
 export interface CharacterState {
   isThinking: boolean;
   instanceCount: number;
@@ -25,7 +75,19 @@ export interface CharacterState {
   isTyping: boolean;
   chatMessages: ChatMessage[];
   inspectorTab: 'info' | 'chat';
-  
+  activeSidebarTab: ActiveSidebarTab;
+  setActiveSidebarTab: (tab: ActiveSidebarTab) => void;
+
+  skillProfile: SkillProfile | null;
+  setSkillProfile: (profile: SkillProfile | null) => void;
+
+  jobMatchesCurrent: DiscoveredJob[];
+  jobMatchesReachable: DiscoveredJob[];
+  setJobMatches: (mode: 'current' | 'reachable', jobs: DiscoveredJob[]) => void;
+
+  recommendedPrograms: Record<string, RecommendedProgram[]>;
+  setRecommendedPrograms: (programs: Record<string, RecommendedProgram[]>) => void;
+
   // Real-time agent statuses for 3D synchronization
   agentStatuses: Record<number, AgentState>;
   setAgentStatus: (index: number, status: AgentState) => void;
@@ -33,6 +95,12 @@ export interface CharacterState {
   isBYOKOpen: boolean;
   byokError: string | null;
   setBYOKOpen: (open: boolean, error?: string | null) => void;
+
+  isDedupReviewOpen: boolean;
+  setDedupReviewOpen: (open: boolean) => void;
+
+  isAnalyticsDashboardOpen: boolean;
+  setAnalyticsDashboardOpen: (open: boolean) => void;
 
   activeAuditTaskId: string | null;
   setActiveAuditTaskId: (taskId: string | null) => void;
@@ -173,3 +241,93 @@ export interface ExpressionConfig {
   eyes: AtlasCoords;
   mouth: AtlasCoords;
 }
+
+// ── Trainee Identity, Consent & Outcomes ─────────────────────
+
+export type ConsentScope = 'JOB_SEARCH_DATA' | 'EMPLOYER_SHARING' | 'ANALYTICS' | 'GOVT_CROSS_CHECK';
+
+export interface ConsentItem {
+  granted: boolean;
+  grantedAt: string;
+  revokedAt: string | null;
+  version: string;
+}
+
+export type ConsentStateMap = Record<string, ConsentItem>;
+
+export interface TraineeRecord {
+  id: string;
+  phoneNumber: string;
+  name: string;
+  preferredLanguage: string;
+  githubId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EnrolmentRecord {
+  id: string;
+  traineeId: string;
+  scheme: string;
+  courseName: string;
+  providerName: string;
+  cohortName: string;
+  enrolmentDate: string;
+  certificationDate: string | null;
+  createdAt: string;
+}
+
+export interface TraineeProfileData {
+  trainee: TraineeRecord;
+  enrolments: EnrolmentRecord[];
+  consent?: ConsentStateMap;
+}
+
+export interface EmployerVerificationRecord {
+  id: string;
+  outcomeCheckInId: string;
+  traineeId: string;
+  employerNameClaimed: string;
+  employerContactEmail: string;
+  contactDomainFlag: boolean;
+  verificationToken: string;
+  tokenExpiresAt: string;
+  status: 'PENDING' | 'CONFIRMED' | 'DENIED' | string;
+  reasonCode: 'SKILL_GAP' | 'WAGE_MISMATCH' | 'LOCATION' | 'NO_SHOW' | 'ROLE_MISMATCH' | 'OTHER' | string | null;
+  reasonNotes: string | null;
+  verifiedByName: string | null;
+  verifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface OutcomeCheckInRecord {
+  id: string;
+  traineeId: string;
+  checkinType: 'SELF_INITIATED' | '90_DAY' | '180_DAY' | '365_DAY' | string;
+  status: 'PENDING' | 'COMPLETED' | 'NO_RESPONSE' | string;
+  employmentStatus: 'EMPLOYED' | 'SELF_EMPLOYED' | 'SEARCHING' | 'IN_TRAINING' | 'OTHER' | null;
+  employerName: string | null;
+  wageBand: string | null;
+  notes: string | null;
+  scheduledFor: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+  roleRelevance?: 'DIRECTLY_RELATED' | 'SOMEWHAT_RELATED' | 'UNRELATED' | string | null;
+  selfEmploymentType?: string | null;
+  apprenticeshipEmployer?: string | null;
+  nonPlacementReason?: 'SKILL_GAP' | 'WAGE_EXPECTATION' | 'LOCATION' | 'NO_RESPONSE_FROM_EMPLOYERS' | 'OTHER' | string | null;
+  placementDistrict?: string | null;
+  employerVerification?: EmployerVerificationRecord | null;
+}
+
+export interface GovtCrossCheckRecord {
+  id: string;
+  traineeId: string;
+  source: 'ESHRAM' | 'UDYAM' | string;
+  matchFound: boolean;
+  matchConfidence: number | null;
+  matchedRecordSummary: string | null;
+  checkedAt: string;
+}
+
+
