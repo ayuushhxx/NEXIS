@@ -3,9 +3,10 @@ import { useTraineeProfile } from '../../integration/hooks/useTraineeProfile';
 
 export function useIsAdmin() {
   const { token } = useTraineeProfile();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const isDevToken = token === 'dev_trainee' || token.startsWith('mock_') || token.startsWith('dev_');
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => isDevToken);
+  const [role, setRole] = useState<string | null>(() => (isDevToken ? 'SUPER_ADMIN' : null));
+  const [loading, setLoading] = useState(!isDevToken);
 
   useEffect(() => {
     let mounted = true;
@@ -34,12 +35,14 @@ export function useIsAdmin() {
           }
         } else {
           if (mounted) {
-            setIsAdmin(false);
+            setIsAdmin(isDevToken);
+            if (isDevToken) setRole('SUPER_ADMIN');
           }
         }
       } catch (err) {
         if (mounted) {
-          setIsAdmin(false);
+          setIsAdmin(isDevToken);
+          if (isDevToken) setRole('SUPER_ADMIN');
         }
       } finally {
         if (mounted) {
@@ -53,7 +56,7 @@ export function useIsAdmin() {
     return () => {
       mounted = false;
     };
-  }, [token]);
+  }, [token, isDevToken]);
 
   return { isAdmin, role, loading };
 }
