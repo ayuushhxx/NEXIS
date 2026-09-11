@@ -23,11 +23,28 @@ import prisma from './prisma.js'
  * @returns {Promise<void>}
  */
 export async function seedAdminUser() {
+  // Ensure 'dev_trainee' exists so local developers are never locked out of Admin & Government views
+  try {
+    const devAdmin = await prisma.adminUser.findUnique({
+      where: { githubUsername: 'dev_trainee' },
+    })
+    if (!devAdmin) {
+      await prisma.adminUser.create({
+        data: {
+          githubUsername: 'dev_trainee',
+          role: 'SUPER_ADMIN',
+        },
+      })
+      console.log('[seedAdminUser] ✅ Seeded default dev_trainee as SUPER_ADMIN for local development.')
+    }
+  } catch (err) {
+    // Non-fatal
+  }
+
   const username = process.env.ADMIN_GITHUB_USERNAME?.trim()
 
   if (!username) {
-    // No env var set — nothing to seed. This is expected in production once
-    // the first admin has been created via the initial bootstrap run.
+    // No env var set — nothing else to seed.
     return
   }
 
